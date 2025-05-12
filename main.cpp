@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <time.h>
 #include <vector>
+#include <stdlib.h>
 
 // Game state
 enum GameState {
@@ -17,11 +18,14 @@ GameState gameState = START;
 
 // Game variables
 int score = 0;
+int highScore = 0;
 int selectedCharacter = 0; // 0=Anger, 1=Happy, 2=Sad
 bool paused = false;
+bool newHighScore = false;
 float gameTime = 20.0f;
 time_t lastTime;
 float gameSpeed = 1.0f;
+bool isBackgroundPlaying = false; // Track background music state
 
 // Character position and scaling
 float translateX = 0.0f, translateY = 0.0f;
@@ -47,6 +51,25 @@ struct Token {
 
 Token tokens[10];
 std::vector<Fireball> fireballs;
+
+// File handling for high score
+void saveHighScore() {
+    FILE* file = fopen("highscore.txt", "w");
+    if (file) {
+        fprintf(file, "%d", highScore);
+        fclose(file);
+    }
+}
+
+void loadHighScore() {
+    FILE* file = fopen("highscore.txt", "r");
+    if (file) {
+        fscanf(file, "%d", &highScore);
+        fclose(file);
+    } else {
+        highScore = 0;
+    }
+}
 
 // Drawing functions
 void drawCircle(float x, float y, float radius) {
@@ -237,10 +260,10 @@ void drawSadCharacter(float x, float y) {
 
 void drawBackground() {
     glPushMatrix();
-    glColor3f(0.1f, 0.1f, 0.3f); // Dark blue-gray for subtle background
+    glColor3f(0.1f, 0.1f, 0.3f);
     for (float x = -1.0f; x <= 1.0f; x += 0.2f) {
         for (float y = -1.0f; y <= 1.0f; y += 0.2f) {
-            drawFilledCircle(x, y, 0.03f); // Small circles in a grid
+            drawFilledCircle(x, y, 0.03f);
         }
     }
     glPopMatrix();
@@ -270,6 +293,9 @@ void drawStartScreen() {
     drawText(-0.3f, 0.1f, "Press S to Start");
     drawText(-0.3f, -0.1f, "Use Arrows to Move");
     drawText(-0.3f, -0.3f, "Collect Blue Tokens");
+    char highScoreText[50];
+    sprintf(highScoreText, "High Score: %d", highScore);
+    drawText(-0.3f, -0.5f, highScoreText);
 }
 
 void drawCharSelectScreen() {
@@ -289,7 +315,7 @@ void drawCharSelectScreen() {
     drawAngerCharacter(-0.55f, 0.2f);
     drawText(-0.65f, -0.2f, "Anger");
 
-    // sad character option
+    // Happy character option
     if (selectedCharacter == 1) {
         glColor3f(0.0f, 1.0f, 0.0f);
         glBegin(GL_LINE_LOOP);
@@ -302,7 +328,7 @@ void drawCharSelectScreen() {
     drawHappyCharacter(0.05f, 0.2f);
     drawText(-0.05f, -0.2f, "Happy");
 
-    // happy character option
+    // Sad character option
     if (selectedCharacter == 2) {
         glColor3f(0.0f, 1.0f, 0.0f);
         glBegin(GL_LINE_LOOP);
@@ -317,6 +343,9 @@ void drawCharSelectScreen() {
 
     drawText(-0.3f, -0.6f, "Press ENTER to Select");
     drawText(-0.3f, -0.8f, "Use LEFT/RIGHT to Choose");
+    char highScoreText[50];
+    sprintf(highScoreText, "High Score: %d", highScore);
+    drawText(-0.3f, -1.0f, highScoreText);
 }
 
 void drawGameOverScreen() {
@@ -324,8 +353,14 @@ void drawGameOverScreen() {
     char scoreText[50];
     sprintf(scoreText, "Final Score: %d", score);
     drawText(-0.3f, 0.2f, scoreText);
-    drawText(-0.3f, 0.0f, "Game Over!");
-    drawText(-0.3f, -0.2f, "Press R to Restart");
+    char highScoreText[50];
+    sprintf(highScoreText, "High Score: %d", highScore);
+    drawText(-0.3f, 0.0f, highScoreText);
+    drawText(-0.3f, -0.2f, "Game Over!");
+    if (newHighScore) {
+        drawText(-0.3f, -0.4f, "New High Score!");
+    }
+    drawText(-0.3f, -0.6f, "Press R to Restart");
 }
 
 void display() {
@@ -392,6 +427,12 @@ void display() {
 
 void update(int value) {
     if (gameState == PLAYING && !paused) {
+        // Start background music if not playing
+        if (!isBackgroundPlaying) {
+            PlaySound(TEXT("background.wav"), NULL, SND_ASYNC | SND_LOOP | SND_FILENAME);
+            isBackgroundPlaying = true;
+        }
+
         // Update game time
         time_t currentTime = time(NULL);
         if (lastTime != 0) {
@@ -402,6 +443,15 @@ void update(int value) {
         if (gameTime <= 0) {
             gameTime = 0;
             gameState = GAME_OVER;
+            // Stop background music
+            PlaySound(NULL, NULL, 0);
+            isBackgroundPlaying = false;
+            // Check for new high score
+            if (score > highScore) {
+                highScore = score;
+                newHighScore = true;
+                saveHighScore();
+            }
         }
 
         // Move fireballs downward
@@ -453,6 +503,15 @@ void update(int value) {
             float distance = sqrt(dx * dx + dy * dy);
             if (distance < 0.1f + (0.05f * fireballs[i].size)) {
                 gameState = GAME_OVER;
+                // Stop background music
+                PlaySound(NULL, NULL, 0);
+                isBackgroundPlaying = false;
+                // Check for new high score
+                if (score > highScore) {
+                    highScore = score;
+                    newHighScore = true;
+                    saveHighScore();
+                }
             }
         }
 
@@ -461,8 +520,17 @@ void update(int value) {
             float dx = ANGER_X - translateX;
             float dy = ANGER_Y - translateY;
             float distance = sqrt(dx * dx + dy * dy);
-            if (distance < 0.2f) { // Approximate size for collision
+            if (distance < 0.2f) {
                 gameState = GAME_OVER;
+                // Stop background music
+                PlaySound(NULL, NULL, 0);
+                isBackgroundPlaying = false;
+                // Check for new high score
+                if (score > highScore) {
+                    highScore = score;
+                    newHighScore = true;
+                    saveHighScore();
+                }
             }
         }
 
@@ -478,6 +546,12 @@ void update(int value) {
         if (translateX < -0.9f) translateX = -0.9f;
         if (translateY > 0.9f) translateY = 0.9f;
         if (translateY < -0.9f) translateY = -0.9f;
+    } else {
+        // Stop background music if not in PLAYING state or paused
+        if (isBackgroundPlaying && (gameState != PLAYING || paused)) {
+            PlaySound(NULL, NULL, 0);
+            isBackgroundPlaying = false;
+        }
     }
 
     glutPostRedisplay();
@@ -487,6 +561,8 @@ void update(int value) {
 void keyboard(unsigned char key, int x, int y) {
     switch(key) {
         case 27: // ESC key
+            PlaySound(NULL, NULL, 0); // Stop all sounds
+            isBackgroundPlaying = false;
             exit(0);
             break;
         case 's':
@@ -509,8 +585,11 @@ void keyboard(unsigned char key, int x, int y) {
                 gameTime = 20.0f;
                 translateX = translateY = 0.0f;
                 scaleX = scaleY = 1.0f;
+                newHighScore = false;
+                isBackgroundPlaying = false; // Reset background music
                 fireballs.clear();
-                display();
+                display(); // Reinitialize game objects
+                glutPostRedisplay();
             } else if (gameState == PLAYING && paused) {
                 paused = false;
                 lastTime = time(NULL);
@@ -583,6 +662,7 @@ int main(int argc, char** argv) {
     glutCreateWindow("Character Escape Game");
 
     srand(time(NULL));
+    loadHighScore();
     initGame();
 
     glutDisplayFunc(display);
