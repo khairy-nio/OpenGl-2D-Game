@@ -501,7 +501,7 @@ void update(int value) {
             float dx = fireballs[i].center.x - translateX;
             float dy = fireballs[i].center.y - translateY;
             float distance = sqrt(dx * dx + dy * dy);
-            if (distance < 0.1f + (0.05f * fireballs[i].size)) {
+            if (distance < 0.05f + (0.05f * fireballs[i].size)) {
                 gameState = GAME_OVER;
                 // Stop background music
                 PlaySound(NULL, NULL, 0);
